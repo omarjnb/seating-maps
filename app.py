@@ -72,7 +72,7 @@ app.config.update(
 
 #: Prefer ADMIN_PASSWORD_HASH (a werkzeug hash). ADMIN_PASSWORD is the plain
 #: fallback for quick local runs.
-ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "32768:8:1$GupNwFCFIplJpmoD$efdca8d9643aff3ba6548cb19627d7178df35db6dc734d6d9e3663d14449093504a1db464cf088756aeab4ca0d05767eb293207b6c2f4d42c54f1c0566d17087").strip()
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", " ").strip()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
 
 # In-memory brute-force throttle: {ip: (failed_count, first_failure_ts)}

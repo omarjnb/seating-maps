@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<section class="datepick">
+  <div>
+    <h1>{{ exam_date | pretty_date }}</h1>
+    <p class="muted">
+      {% if total %}
+        {{ total }} seating map{{ 's' if total != 1 else '' }} published for this date.
+      {% else %}
+        No seating maps published for this date yet.
+      {% endif %}
+    </p>
+  </div>
+
+  <form method="get" action="{{ url_for('index') }}" class="date-form">
+    <label for="date">Exam date</label>
+    <input type="date" id="date" name="date" value="{{ exam_date }}">
+    <button type="submit" class="btn btn-secondary">Show</button>
+    {% if exam_date != today %}
+      <a class="btn btn-ghost" href="{{ url_for('index') }}">Today</a>
+    {% endif %}
+  </form>
+</section>
+
+{% if upcoming %}
+  <nav class="chips" aria-label="Dates with published maps">
+    <span class="chips-label">Jump to:</span>
+    {% for row in upcoming %}
+      <a class="chip {{ 'chip-active' if row.exam_date == exam_date }}"
+         href="{{ url_for('index', date=row.exam_date) }}">
+        {{ row.exam_date }}
+        <span class="chip-count">{{ row.n }}</span>
+      </a>
+    {% endfor %}
+  </nav>
+{% endif %}
+
+{% if total %}
+  <div class="toolbar">
+    <div class="search-box">
+      <label class="sr-only" for="filter">Filter by hall or subject</label>
+      <input type="search" id="filter" placeholder="Filter by hall, subject or code…"
+             autocomplete="off">
+    </div>
+    <a class="btn btn-secondary"
+       href="{{ url_for('download_bundle', date=exam_date) }}">
+      Download all {{ total }} as .zip
+    </a>
+  </div>
+
+  <p class="no-results" id="no-results" hidden>Nothing matches that filter.</p>
+
+  {% for session_name, halls in grouped %}
+    <section class="session-block" data-session>
+      <div class="session-head">
+        <h2>{{ session_name }} session</h2>
+        <a class="btn btn-ghost btn-sm"
+           href="{{ url_for('download_bundle', date=exam_date, session=session_name) }}">
+          Zip this session
+        </a>
+      </div>
+
+      <div class="hall-grid">
+        {% for hall, maps in halls %}
+          <article class="hall-card"
+                   data-hall
+                   data-search="{{ (hall ~ ' ' ~ maps | map(attribute='subject') | join(' ') ~ ' ' ~ maps | map(attribute='subject_code') | join(' ')) | lower }}">
+            <header class="hall-card-head">
+              <h3>{{ hall }}</h3>
+              <span class="badge">{{ maps | length }} map{{ 's' if maps | length != 1 else '' }}</span>
+            </header>
+
+            <ul class="map-list">
+              {% for m in maps %}
+                <li class="map-row">
+                  <div class="map-meta">
+                    <span class="map-subject">{{ m.subject }}</span>
+                    {% if m.subject_code %}
+                      <span class="map-code">{{ m.subject_code }}</span>
+                    {% endif %}
+                    <span class="map-size">{{ m.size_bytes | human_size }}</span>
+                  </div>
+                  <div class="map-actions">
+                    <a class="btn btn-primary btn-sm"
+                       href="{{ url_for('download_map', map_id=m.id) }}">Download</a>
+                    <a class="btn btn-ghost btn-sm"
+                       href="{{ url_for('view_map', map_id=m.id) }}"
+                       target="_blank" rel="noopener">Open / print</a>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+
+            {% if maps | length > 1 %}
+              <footer class="hall-card-foot">
+                <a class="btn btn-ghost btn-sm"
+                   href="{{ url_for('download_bundle', date=exam_date, session=session_name, hall=hall) }}">
+                  Download all {{ maps | length }} for {{ hall }}
+                </a>
+              </footer>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+
+{% else %}
+  <div class="empty">
+    <p class="empty-title">Nothing published for {{ exam_date | pretty_date }}.</p>
+    <p class="muted">Pick another date above, or check with the examinations office.</p>
+    {% if is_admin %}
+      <a class="btn btn-primary" href="{{ url_for('admin', date=exam_date) }}">
+        Upload maps for this date
+      </a>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Client-side filter across hall cards.
+  const filterInput = document.getElementById('filter');
+  if (filterInput) {
+    const cards = Array.from(document.querySelectorAll('[data-hall]'));
+    const blocks = Array.from(document.querySelectorAll('[data-session]'));
+    const noResults = document.getElementById('no-results');
+
+    filterInput.addEventListener('input', () => {
+      const term = filterInput.value.trim().toLowerCase();
+      let visible = 0;
+
+      cards.forEach((card) => {
+        const match = !term || card.dataset.search.includes(term);
+        card.hidden = !match;
+        if (match) visible += 1;
+      });
+
+      // Hide a whole session block when none of its halls match.
+      blocks.forEach((block) => {
+        const anyVisible = Array.from(block.querySelectorAll('[data-hall]'))
+          .some((card) => !card.hidden);
+        block.hidden = !anyVisible;
+      });
+
+      noResults.hidden = visible > 0;
+    });
+  }
+</script>
+{% endblock %}

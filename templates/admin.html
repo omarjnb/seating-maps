@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+
+{% block title %}Manage maps — Exam Hall Seating Maps{% endblock %}
+
+{% block content %}
+
+<section class="datepick">
+  <div>
+    <h1>Manage seating maps</h1>
+    <p class="muted">
+      Upload any number of PDFs for one exam date. Each file gets its own
+      session, hall and subject.
+    </p>
+  </div>
+  <a class="btn btn-secondary" href="{{ url_for('index', date=exam_date) }}">
+    View public page
+  </a>
+</section>
+
+<datalist id="known-halls">
+  {% for hall in known_halls %}<option value="{{ hall }}"></option>{% endfor %}
+</datalist>
+
+<!-- ------------------------- Upload ------------------------- -->
+
+<form class="panel" method="post" action="{{ url_for('upload') }}"
+      enctype="multipart/form-data" id="upload-form">
+  <h2>Upload maps</h2>
+  <p class="panel-hint">
+    Maximum {{ max_upload_mb }} MB per batch. Filenames like
+    <code>HallA_MATH101_Morning.pdf</code> are parsed automatically — correct
+    anything that comes out wrong.
+  </p>
+
+  <div class="field-row">
+    <div class="field">
+      <label for="exam_date">Exam date for this batch</label>
+      <input type="date" id="exam_date" name="exam_date" value="{{ exam_date }}" required>
+    </div>
+    <div class="field">
+      <label for="default_session">Default session for new files</label>
+      <select id="default_session">
+        {% for s in sessions %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <label class="dropzone" id="dropzone" for="file-input">
+    <p class="dropzone-title">Drop PDFs here, or click to choose files</p>
+    <p class="dropzone-hint">Select as many as you like — one hall or twenty.</p>
+    <input type="file" id="file-input" name="maps" accept="application/pdf,.pdf" multiple>
+  </label>
+
+  <div class="queue" id="queue" hidden>
+    <div class="field-row" style="margin-bottom:10px;">
+      <strong id="queue-count"></strong>
+      <button type="button" class="btn btn-ghost btn-sm" id="fill-down">
+        Copy first row's hall &amp; session down
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" id="clear-queue">
+        Clear all
+      </button>
+    </div>
+
+    <div class="table-scroll">
+      <table class="queue-table">
+        <thead>
+          <tr>
+            <th>File</th>
+            <th style="width:140px">Session</th>
+            <th style="width:170px">Hall</th>
+            <th style="width:200px">Subject</th>
+            <th style="width:130px">Code</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="queue-body"></tbody>
+      </table>
+    </div>
+
+    <div class="field-row" style="margin:18px 0 0;">
+      <button type="submit" class="btn btn-primary" id="submit-btn">
+        Upload to {{ exam_date }}
+      </button>
+    </div>
+  </div>
+</form>
+
+<!-- ------------------------- Existing ------------------------- -->
+
+<section class="panel">
+  <h2>Published for {{ exam_date | pretty_date }}</h2>
+  <p class="panel-hint">
+    {{ maps | length }} map{{ 's' if maps | length != 1 else '' }} on this date.
+    Edit the details inline, or delete a map if the arrangement changed.
+  </p>
+
+  {% if maps %}
+    <div class="table-scroll">
+      <table class="existing-table">
+        <thead>
+          <tr>
+            <th style="width:130px">Session</th>
+            <th style="width:160px">Hall</th>
+            <th>Subject</th>
+            <th style="width:120px">Code</th>
+            <th style="width:130px">Date</th>
+            <th style="width:170px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in maps %}
+            <tr>
+              <td>
+                <select name="session_name" form="edit-{{ m.id }}">
+                  {% for s in sessions %}
+                    <option value="{{ s }}" {{ 'selected' if s == m.session_name }}>{{ s }}</option>
+                  {% endfor %}
+                  {% if m.session_name not in sessions %}
+                    <option value="{{ m.session_name }}" selected>{{ m.session_name }}</option>
+                  {% endif %}
+                </select>
+              </td>
+              <td>
+                <input type="text" name="hall" value="{{ m.hall }}"
+                       list="known-halls" form="edit-{{ m.id }}" required>
+              </td>
+              <td>
+                <input type="text" name="subject" value="{{ m.subject }}"
+                       form="edit-{{ m.id }}" required>
+                <div class="file-cell" title="{{ m.original_name }}">
+                  {{ m.original_name }} · {{ m.size_bytes | human_size }}
+                </div>
+              </td>
+              <td>
+                <input type="text" name="subject_code" value="{{ m.subject_code }}"
+                       form="edit-{{ m.id }}">
+              </td>
+              <td>
+                <input type="date" name="exam_date" value="{{ m.exam_date }}"
+                       form="edit-{{ m.id }}" required>
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a class="btn btn-ghost btn-sm"
+                     href="{{ url_for('view_map', map_id=m.id) }}"
+                     target="_blank" rel="noopener">Open</a>
+                  <button type="submit" class="btn btn-secondary btn-sm"
+                          form="edit-{{ m.id }}">Save</button>
+                  <button type="submit" class="btn btn-danger btn-sm"
+                          form="del-{{ m.id }}">Delete</button>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {# Forms live outside the table; inputs above reference them by id. #}
+    {% for m in maps %}
+      <form id="edit-{{ m.id }}" method="post"
+            action="{{ url_for('edit_map', map_id=m.id) }}"></form>
+      <form id="del-{{ m.id }}" method="post"
+            action="{{ url_for('delete_map', map_id=m.id) }}"
+            data-confirm="Delete the map for {{ m.hall }} — {{ m.subject }}? This cannot be undone."></form>
+    {% endfor %}
+  {% else %}
+    <p class="muted">Nothing uploaded for this date yet.</p>
+  {% endif %}
+</section>
+
+{% if all_dates %}
+  <section class="panel">
+    <h2>Other dates</h2>
+    <div class="date-list">
+      {% for row in all_dates %}
+        <a class="chip {{ 'chip-active' if row.exam_date == exam_date }}"
+           href="{{ url_for('admin', date=row.exam_date) }}">
+          {{ row.exam_date }}<span class="chip-count">{{ row.n }}</span>
+        </a>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const SESSIONS = {{ sessions | tojson }};
+  const fileInput   = document.getElementById('file-input');
+  const dropzone    = document.getElementById('dropzone');
+  const queue       = document.getElementById('queue');
+  const queueBody   = document.getElementById('queue-body');
+  const queueCount  = document.getElementById('queue-count');
+  const defaultSess = document.getElementById('default_session');
+  const examDate    = document.getElementById('exam_date');
+  const submitBtn   = document.getElementById('submit-btn');
+
+  /** Queue state: one entry per chosen file, holding its metadata. */
+  let items = [];
+
+  // ---- Filename parsing -------------------------------------------------
+
+  const CODE_RE    = /^[A-Za-z]{2,5}-?\d{3,4}[A-Za-z]?$/;
+  const SESSION_RE = /^(morning|afternoon|evening|am|pm)$/i;
+  const PLACE_RE   = /^(hall|room|block|lab|theatre|theater|gym|auditorium)$/i;
+  const PLACE_JOINED_RE =
+    /^(hall|room|block|lab|theatre|theater|gym|auditorium)[-_]?([A-Za-z0-9]{1,4})$/i;
+  // A hall's designator: "A", "12", "B2", "3A" — never a whole word such as
+  // "Statistics", which would otherwise get swallowed into the hall name.
+  const DESIGNATOR_RE = /^(?:[A-Za-z]|\d{1,3}[A-Za-z]?|[A-Za-z]\d{1,2})$/;
+
+  // A short all-caps word is almost always deliberate — roman numerals
+  // ("II"), acronyms ("IT", "AI") — so leave those as typed.
+  const titleCase = (s) =>
+    s.replace(/\w\S*/g, (w) =>
+      w.length <= 4 && /[A-Z]/.test(w) && w === w.toUpperCase()
+        ? w
+        : w[0].toUpperCase() + w.slice(1).toLowerCase()
+    );
+
+  function normalizeSession(token) {
+    const t = token.toLowerCase();
+    if (t === 'am') return 'Morning';
+    if (t === 'pm') return 'Afternoon';
+    const match = SESSIONS.find((s) => s.toLowerCase() === t);
+    return match || titleCase(token);
+  }
+
+  function parseFilename(filename) {
+    const stem = filename.replace(/\.pdf$/i, '');
+    // Split CamelCase runs like "HallA" are handled by PLACE_JOINED_RE below.
+    const tokens = stem
+      .replace(/[_]+/g, ' ')
+      .replace(/\s*-\s*/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t && t !== '-');
+
+    let code = '', hall = '', sessionName = '';
+    const rest = [];
+
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+
+      if (!code && CODE_RE.test(token)) { code = token.toUpperCase(); continue; }
+      if (!sessionName && SESSION_RE.test(token)) {
+        sessionName = normalizeSession(token);
+        continue;
+      }
+      if (!hall) {
+        const joined = token.match(PLACE_JOINED_RE);
+        if (joined && DESIGNATOR_RE.test(joined[2])) {
+          hall = titleCase(joined[1]) + ' ' + joined[2].toUpperCase();
+          continue;
+        }
+        if (PLACE_RE.test(token)) {
+          hall = titleCase(token);
+          // Only absorb the next token when it reads as a room designator.
+          const next = tokens[i + 1];
+          if (next && DESIGNATOR_RE.test(next) && !CODE_RE.test(next)) {
+            hall += ' ' + next.toUpperCase();
+            i++;
+          }
+          continue;
+        }
+      }
+      rest.push(token);
+    }
+
+    return {
+      hall,
+      code,
+      session: sessionName || defaultSess.value,
+      subject: rest.length ? titleCase(rest.join(' ')) : '',
+    };
+  }
+
+  // ---- Queue rendering --------------------------------------------------
+
+  function syncFileInput() {
+    const transfer = new DataTransfer();
+    items.forEach((item) => transfer.items.add(item.file));
+    fileInput.files = transfer.files;
+  }
+
+  function render() {
+    queueBody.innerHTML = '';
+
+    items.forEach((item, index) => {
+      const tr = document.createElement('tr');
+
+      const fileCell = document.createElement('td');
+      fileCell.className = 'file-cell';
+      fileCell.title = item.file.name;
+      fileCell.textContent = item.file.name;
+      tr.appendChild(fileCell);
+
+      // Session
+      const sessCell = document.createElement('td');
+      const select = document.createElement('select');
+      select.name = 'session-' + index;
+      SESSIONS.forEach((s) => {
+        const option = document.createElement('option');
+        option.value = s;
+        option.textContent = s;
+        if (s === item.session) option.selected = true;
+        select.appendChild(option);
+      });
+      if (!SESSIONS.includes(item.session)) {
+        const option = document.createElement('option');
+        option.value = item.session;
+        option.textContent = item.session;
+        option.selected = true;
+        select.appendChild(option);
+      }
+      select.addEventListener('change', () => { item.session = select.value; });
+      sessCell.appendChild(select);
+      tr.appendChild(sessCell);
+
+      // Text fields
+      const textFields = [
+        ['hall', 'Hall name', true, 'known-halls'],
+        ['subject', 'Subject', true, null],
+        ['code', 'e.g. MATH101', false, null],
+      ];
+
+      textFields.forEach(([key, placeholder, required, list]) => {
+        const cell = document.createElement('td');
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.name = key + '-' + index;
+        input.value = item[key] || '';
+        input.placeholder = placeholder;
+        if (required) input.required = true;
+        if (list) input.setAttribute('list', list);
+        input.addEventListener('input', () => { item[key] = input.value; });
+        cell.appendChild(input);
+        tr.appendChild(cell);
+      });
+
+      // Remove
+      const removeCell = document.createElement('td');
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'link-button';
+      removeBtn.style.color = 'var(--err)';
+      removeBtn.title = 'Remove from this batch';
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', () => {
+        items.splice(index, 1);
+        syncFileInput();
+        render();
+      });
+      removeCell.appendChild(removeBtn);
+      tr.appendChild(removeCell);
+
+      queueBody.appendChild(tr);
+    });
+
+    const count = items.length;
+    queue.hidden = count === 0;
+    queueCount.textContent =
+      count + ' file' + (count === 1 ? '' : 's') + ' ready';
+    submitBtn.textContent = 'Upload ' + count +
+      ' map' + (count === 1 ? '' : 's') + ' to ' + examDate.value;
+  }
+
+  function addFiles(fileList) {
+    Array.from(fileList).forEach((file) => {
+      if (!/\.pdf$/i.test(file.name)) return;
+      const duplicate = items.some(
+        (item) => item.file.name === file.name && item.file.size === file.size
+      );
+      if (duplicate) return;
+      items.push(Object.assign({ file }, parseFilename(file.name)));
+    });
+    syncFileInput();
+    render();
+  }
+
+  // ---- Wiring -----------------------------------------------------------
+
+  fileInput.addEventListener('change', (event) => {
+    // Rebuild from state so repeat picks accumulate instead of replacing.
+    const picked = Array.from(event.target.files);
+    const known = new Set(items.map((i) => i.file.name + ':' + i.file.size));
+    const fresh = picked.filter((f) => !known.has(f.name + ':' + f.size));
+    if (fresh.length) addFiles(fresh); else syncFileInput();
+  });
+
+  ['dragenter', 'dragover'].forEach((type) =>
+    dropzone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropzone.classList.add('is-dragover');
+    })
+  );
+
+  ['dragleave', 'drop'].forEach((type) =>
+    dropzone.addEventListener(type, (event) => {
+      event.preventDefault();
+      dropzone.classList.remove('is-dragover');
+    })
+  );
+
+  dropzone.addEventListener('drop', (event) => {
+    if (event.dataTransfer && event.dataTransfer.files.length) {
+      addFiles(event.dataTransfer.files);
+    }
+  });
+
+  examDate.addEventListener('change', render);
+
+  document.getElementById('fill-down').addEventListener('click', () => {
+    if (items.length < 2) return;
+    const { hall, session } = items[0];
+    items.slice(1).forEach((item) => {
+      item.hall = hall;
+      item.session = session;
+    });
+    render();
+  });
+
+  document.getElementById('clear-queue').addEventListener('click', () => {
+    items = [];
+    syncFileInput();
+    render();
+  });
+
+  document.getElementById('upload-form').addEventListener('submit', (event) => {
+    if (!items.length) {
+      event.preventDefault();
+      return;
+    }
+    const missing = items.filter((item) => !item.hall.trim());
+    if (missing.length) {
+      event.preventDefault();
+      alert('Every file needs a hall name. ' + missing.length + ' still blank.');
+      return;
+    }
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Uploading…';
+  });
+
+  // Confirm deletions.
+  document.querySelectorAll('form[data-confirm]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      if (!confirm(form.dataset.confirm)) event.preventDefault();
+    });
+  });
+})();
+</script>
+{% endblock %}
